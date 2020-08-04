@@ -206,9 +206,9 @@ module OmniAuth
         if access_token.id_token
           decoded = decode_id_token(access_token.id_token).raw_attributes
 
-          @user_info = ::OpenIDConnect::ResponseObject::UserInfo.new access_token.userinfo!.raw_attributes.merge(decoded)
+          @user_info = ::OpenIDConnect::ResponseObject::UserInfo.new user_info_from_access_token.raw_attributes.merge(decoded)
         else
-          @user_info = access_token.userinfo!
+          @user_info = user_info_from_access_token
         end
       end
 
@@ -223,6 +223,20 @@ module OmniAuth
         verify_id_token!(@access_token.id_token) if configured_response_type == 'code'
 
         @access_token
+      end
+
+      def user_info_from_access_token
+        access_token.userinfo!
+      rescue ::OpenIDConnect::Unauthorized => e
+        # token was created for a different audience, try to decode the access_token instead
+        begin
+          decoded = JSON::JWT.decode(access_token.access_token, :skip_verification)
+
+          ::OpenIDConnect::ResponseObject::UserInfo.new decoded
+        rescue JSON::JWT::InvalidFormat
+          # not a valid jwt token, re-raise the original exception
+          raise e
+        end
       end
 
       def decode_id_token(id_token)
